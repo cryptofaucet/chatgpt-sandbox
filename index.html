@@ -4367,13 +4367,15 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   // Звук генерируется WebAudio: никаких MP3/WAV-запросов к GitHub Pages.
+  const isWindowsApp = new URLSearchParams(window.location.search).has('apprefresh');
+
   function playPremiumSound(){
-    if(localStorage.getItem('premiumAlertSoundEnabled')==='false')return;
+    if(isWindowsApp || localStorage.getItem('premiumAlertSoundEnabled')==='false')return;
     playToneSequence([660,880,1175],0.12);
   }
 
   function playVipSound(){
-    if(localStorage.getItem('vipAlertSoundEnabled')==='false')return;
+    if(isWindowsApp || localStorage.getItem('vipAlertSoundEnabled')==='false')return;
     playToneSequence([880,1175,1568],0.13);
   }
 
