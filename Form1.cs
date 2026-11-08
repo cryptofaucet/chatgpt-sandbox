@@ -958,7 +958,14 @@ public partial class Form1 : Form
 
             var currentMarkers = new HashSet<string>(StringComparer.Ordinal);
 
-            foreach (var row in doc.RootElement.GetProperty("rows").EnumerateArray())
+            var rowsElement = doc.RootElement.GetProperty("rows");
+
+            // Не фиксируем пустое состояние до того, как index.html
+            // успел отрисовать список кранов после загрузки.
+            if (!premiumAlertInitialized && rowsElement.GetArrayLength() == 0)
+                return;
+
+            foreach (var row in rowsElement.EnumerateArray())
             {
                 string id = row.GetProperty("id").GetString() ?? "";
                 double reward = row.GetProperty("reward").GetDouble();
