@@ -858,18 +858,6 @@ tr.globally-disabled .btn-limit {
     }
 }
 	
-/* VIP BOX */
-.vip-box{width:100%;max-width:1200px;margin:0 auto 12px;padding:12px;box-sizing:border-box;background:#111622;border:1px solid #8b5cf6;border-radius:10px;box-shadow:0 0 12px rgba(139,92,246,.12)}
-.vip-box-title{margin:0 0 10px;color:#c4a7ff;font-size:1.1rem;font-weight:bold;text-align:center;letter-spacing:.5px}
-.vip-alert-settings{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:7px;margin:0 auto 10px;color:#d7c9f5;font-size:13px}
-.vip-alert-settings input[type=checkbox],.premium-alert-settings input[type=checkbox]{accent-color:#a78bfa}
-#vip-alert-whole{width:35px}#vip-alert-fraction{width:65px}
-.vip-alert-settings .vip-alert-part{height:25px;padding:2px 3px;border:1px solid #7056a8;border-radius:4px;background:#151a26;color:#c4a7ff;text-align:center;font-size:13px;font-weight:bold;box-sizing:border-box;outline:none}
-.vip-alert-settings .vip-alert-part:focus{border-color:#a78bfa}
-.vip-box .table-title{color:#c4a7ff}.vip-box table{width:100%;border-collapse:collapse}
-.vip-box-empty{padding:12px;color:#8a99ad;text-align:center;font-size:12px}
-@media(max-width:600px){.vip-box{padding:6px}.vip-alert-settings{gap:5px;font-size:11px}.vip-box th,.vip-box td{padding:6px 2px;font-size:10px}}
-
 </style>
 </head>
  
@@ -1262,27 +1250,7 @@ box-sizing: border-box;">
 
 </div> <!-- ЗДЕСЬ СТРОКА ЗАКРЫВАЕТСЯ, И ДАЛЬШЕ ПОД НЕЙ ИДУТ ТАБЛИЦЫ КРАНОВ -->
 
-<!-- VIP BOX: сюда перемещаются настоящие строки VIP-кранов -->
-<section id="vip-box" class="vip-box">
-  <div class="vip-box-title">💎 VIP BOX</div>
-  <div class="vip-alert-settings">
-    <label for="vip-alert-whole" id="vip-alert-caption" style="white-space:nowrap;">🔔 VIP: оповещать от:</label>
-    <input type="text" id="vip-alert-whole" class="vip-alert-part" inputmode="numeric" maxlength="2" autocomplete="off" value="0" aria-label="VIP целая часть">
-    <span style="font-weight:bold">.</span>
-    <input type="text" id="vip-alert-fraction" class="vip-alert-part" inputmode="numeric" maxlength="2" autocomplete="off" value="10" aria-label="VIP дробная часть">
-    <input type="hidden" id="vip-alert-limit" value="0.10">
-    <span id="vip-alert-currency">₽</span>
-    <label style="display:flex;align-items:center;gap:4px;white-space:nowrap"><input type="checkbox" id="vip-sound-toggle" checked><span id="vip-sound-label">Звук</span></label>
-  </div>
-  <table>
-    <thead><tr><th></th><th>Кран</th><th>Награда</th><th>Монета</th><th>RUB / USD</th><th>Кулдаун / Статус</th></tr></thead>
-    <tbody class="vip-faucets" id="vip-faucets"></tbody>
-  </table>
-  <div id="vip-box-empty" class="vip-box-empty" hidden>VIP-краны пока не назначены.</div>
-</section>
-
-
-	<!-- Пояснение режимов -->
+<!-- Пояснение режимов -->
  <div class="mode-info">
     <strong>Режимы работы:</strong>
     <span><b>Локал</b><span> — личные настройки кранов на твоём устройстве.</span></span>
@@ -2876,7 +2844,7 @@ window.calculateLiveRow = function(trId, cryptoValue) {
         }
 
         if (document.querySelector('.left-faucets') || document.querySelector('.right-faucets')) {
-            sortContainer('.left-faucets'); sortContainer('.right-faucets'); sortContainer('.vip-faucets');
+            sortContainer('.left-faucets'); sortContainer('.right-faucets');
         } else {
             sortContainer('table tbody');
         }
@@ -3711,7 +3679,6 @@ function moveGloballyDisabledFaucets() {
     if (!left || !right) return;
 
     document.querySelectorAll('tr[id^="faucet"]').forEach(row => {
-        if (window.isVipFaucetRow && window.isVipFaucetRow(row)) return;
 
         const defaults = defaultSettings.get(row.id) || {};
 
@@ -3847,10 +3814,6 @@ window.updatePublicFaucetStats = updatePublicFaucetStats;
                     : {};
 
             statusLoaded = true;
-            
-            if (typeof window.updateVipFaucetsFromStatus === 'function') {
-                window.updateVipFaucetsFromStatus(data);
-            }
 
 
             captureDefaults();
@@ -4265,168 +4228,75 @@ document.addEventListener('DOMContentLoaded', function () {
 <script>
 (function () {
   'use strict';
-  const vipBody=document.getElementById('vip-faucets');
-  const vipEmpty=document.getElementById('vip-box-empty');
-  if(!vipBody||!vipEmpty)return;
 
-  const originalParents=new Map();
-  document.querySelectorAll('tr[id^="faucet"]').forEach(row=>{if(row.parentElement)originalParents.set(row.id,row.parentElement);});
-  let vipIds=new Set();
-  let statusDataLoaded=false;
-  function loadAlertSet(key){
-    try{return new Set(JSON.parse(localStorage.getItem(key)||'[]'));}
-    catch(_){return new Set();}
+  function loadAlertSet() {
+    try {
+      return new Set(JSON.parse(localStorage.getItem('premiumAlertedFaucets') || '[]'));
+    } catch (_) {
+      return new Set();
+    }
   }
-  const premiumAlerted=loadAlertSet('premiumAlertedFaucets');
-  const vipAlerted=loadAlertSet('vipAlertedFaucets');
-  function saveAlertSet(key,set){localStorage.setItem(key,JSON.stringify(Array.from(set)));}
 
-  const isEnglish=()=>localStorage.getItem('siteLanguage')==='en';
-  function isReady(row){
-    const cell=row&&row.querySelector('.timer-cell');
-    if(!cell||!cell.classList.contains('ready'))return false;
-    if(window.isFaucetGloballyDisabled&&window.isFaucetGloballyDisabled(row))return false;
-    if(window.isLocalModeEnabled&&window.isLocalModeEnabled()&&row.classList.contains('out-of-limit'))return false;
+  const premiumAlerted = loadAlertSet();
+
+  function saveAlertSet() {
+    localStorage.setItem('premiumAlertedFaucets', JSON.stringify(Array.from(premiumAlerted)));
+  }
+
+  function isReady(row) {
+    const cell = row && row.querySelector('.timer-cell');
+    if (!cell || !cell.classList.contains('ready')) return false;
+    if (window.isFaucetGloballyDisabled && window.isFaucetGloballyDisabled(row)) return false;
+    if (window.isLocalModeEnabled && window.isLocalModeEnabled() && row.classList.contains('out-of-limit')) return false;
     return true;
   }
-  const valueRub=row=>Number.parseFloat(row.getAttribute('data-rub-value'))||0;
-  function bestOf(rows){
-    let best=null,highest=-1;
-    rows.forEach(row=>{if(!isReady(row))return;const value=valueRub(row);if(value>highest){highest=value;best=row;}});
-    return best;
-  }
-  const faucetName=row=>row.querySelector('.faucet-link')?.textContent.trim()||row.id;
-  function premiumLimit(){const n=Number(localStorage.getItem('premiumAlertLimitRUB'));return Number.isFinite(n)&&n>=0?n:0.10;}
-  function vipLimit(){const n=Number(localStorage.getItem('vipAlertLimitRUB'));return Number.isFinite(n)&&n>=0?n:0.10;}
 
-  function playPremiumSound(){
-    if(localStorage.getItem('premiumAlertSoundEnabled')==='false')return;
-    const audio=new Audio('./notification.mp3');
-    audio.preload='auto';
-    audio.play().catch(error=>console.warn('[Premium] Звук не воспроизведён:',error));
-  }
-  let audioContext=null;
-  function unlockVipAudio(){
-    const C=window.AudioContext||window.webkitAudioContext;if(!C)return;
-    if(!audioContext)audioContext=new C();
-    if(audioContext.state==='suspended')audioContext.resume().catch(()=>{});
-  }
-  let audioUnlocked=false;
-  function activateAudio(){audioUnlocked=true;unlockVipAudio();}
-  document.addEventListener('pointerdown',activateAudio,{once:true});
-  document.addEventListener('keydown',activateAudio,{once:true});
-  function playVipSound(){
-    if(localStorage.getItem('vipAlertSoundEnabled')==='false')return;
-    try{
-      unlockVipAudio();if(!audioContext)return;
-      const now=audioContext.currentTime;
-      [880,1175,1568].forEach((hz,i)=>{
-        const osc=audioContext.createOscillator(),gain=audioContext.createGain();
-        osc.type='sine';osc.frequency.value=hz;
-        gain.gain.setValueAtTime(0.0001,now+i*0.13);
-        gain.gain.exponentialRampToValueAtTime(0.12,now+i*0.13+0.02);
-        gain.gain.exponentialRampToValueAtTime(0.0001,now+i*0.13+0.18);
-        osc.connect(gain);gain.connect(audioContext.destination);
-        osc.start(now+i*0.13);osc.stop(now+i*0.13+0.2);
-      });
-    }catch(error){console.warn('[VIP] Звук не воспроизведён:',error);}
+  function valueRub(row) {
+    return Number.parseFloat(row.getAttribute('data-rub-value')) || 0;
   }
 
-  function renderVipThreshold(){
-    const whole=document.getElementById('vip-alert-whole'),fraction=document.getElementById('vip-alert-fraction');
-    const hidden=document.getElementById('vip-alert-limit'),symbol=document.getElementById('vip-alert-currency');
-    if(!whole||!fraction||!hidden||!symbol)return;
-    const rub=vipLimit(),usd=localStorage.getItem('siteCurrency')==='USD',rate=Number(localStorage.getItem('usdToRub'))||0;
-    let value=rub,digits=2;
-    if(usd){
-      symbol.textContent='$';digits=6;
-      if(rate<=0){whole.value='0';fraction.value='';fraction.placeholder=isEnglish()?'Rate...':'Курс...';whole.disabled=true;fraction.disabled=true;return;}
-      value=rub/rate;
-    }else{symbol.textContent='₽';fraction.placeholder='';}
-    whole.disabled=false;fraction.disabled=false;
-    const parts=value.toFixed(digits).split('.');
-    whole.value=parts[0];fraction.value=parts[1];fraction.maxLength=digits;hidden.value=value.toFixed(digits);
-  }
-  function saveVipThreshold(){
-    const whole=document.getElementById('vip-alert-whole'),fraction=document.getElementById('vip-alert-fraction'),hidden=document.getElementById('vip-alert-limit');
-    if(!whole||!fraction||!hidden)return;
-    const usd=localStorage.getItem('siteCurrency')==='USD',digits=usd?6:2;
-    whole.value=whole.value.replace(/\D/g,'').slice(0,2);
-    fraction.value=fraction.value.replace(/\D/g,'').slice(0,digits);
-    const value=Number((whole.value||'0')+'.'+fraction.value.padEnd(digits,'0'));
-    if(!Number.isFinite(value)||value<0)return;
-    hidden.value=String(value);
-    const rate=Number(localStorage.getItem('usdToRub'))||0;
-    if(usd){if(rate<=0)return;localStorage.setItem('vipAlertLimitRUB',String(value*rate));}
-    else localStorage.setItem('vipAlertLimitRUB',String(value));
-  }
-  function updateLabels(){
-    const en=isEnglish();
-    const p=document.getElementById('premium-sound-label'),v=document.getElementById('vip-sound-label');
-    const caption=document.getElementById('vip-alert-caption'),empty=document.getElementById('vip-box-empty');
-    if(p)p.textContent=en?'Sound':'Звук';
-    if(v)v.textContent=en?'Sound':'Звук';
-    if(caption)caption.textContent=en?'🔔 VIP alert from:':'🔔 VIP: оповещать от:';
-    if(empty)empty.textContent=en?'No VIP faucets assigned yet.':'VIP-краны пока не назначены.';
+  function premiumLimit() {
+    const n = Number(localStorage.getItem('premiumAlertLimitRUB'));
+    return Number.isFinite(n) && n >= 0 ? n : 0.10;
   }
 
-  const premiumToggle=document.getElementById('premium-sound-toggle'),vipToggle=document.getElementById('vip-sound-toggle');
-  if(premiumToggle){premiumToggle.checked=localStorage.getItem('premiumAlertSoundEnabled')!=='false';premiumToggle.addEventListener('change',()=>localStorage.setItem('premiumAlertSoundEnabled',String(premiumToggle.checked)));}
-  if(vipToggle){vipToggle.checked=localStorage.getItem('vipAlertSoundEnabled')!=='false';vipToggle.addEventListener('change',()=>localStorage.setItem('vipAlertSoundEnabled',String(vipToggle.checked)));}
-  [document.getElementById('vip-alert-whole'),document.getElementById('vip-alert-fraction')].forEach(input=>{
-    if(!input)return;input.addEventListener('input',saveVipThreshold);input.addEventListener('change',renderVipThreshold);input.addEventListener('blur',renderVipThreshold);
-  });
-  document.getElementById('currencyRUB')?.addEventListener('click',()=>setTimeout(renderVipThreshold,0));
-  document.getElementById('currencyUSD')?.addEventListener('click',()=>setTimeout(renderVipThreshold,0));
-  document.getElementById('langRU')?.addEventListener('click',updateLabels);
-  document.getElementById('langEN')?.addEventListener('click',updateLabels);
+  function faucetName(row) {
+    return row.querySelector('.faucet-link')?.textContent.trim() || row.id;
+  }
 
-  window.isVipFaucetRow=row=>!!row&&vipIds.has(row.id);
-  window.updateVipFaucetsFromStatus=function(data){
-    const settings=data&&data.faucet_settings&&typeof data.faucet_settings==='object'?data.faucet_settings:{};
-    const next=new Set();
-    Object.keys(settings).forEach(id=>{if(settings[id]&&settings[id].vip===true)next.add('faucet'+String(id).replace(/^faucet/i,''));});
-    vipIds=next;
-    statusDataLoaded=true;
-    document.querySelectorAll('tr[id^="faucet"]').forEach(row=>{
-      if(vipIds.has(row.id)){if(row.parentElement!==vipBody)vipBody.appendChild(row);}
-      else if(row.parentElement===vipBody){
-        const pos=localStorage.getItem('position_'+row.id),original=originalParents.get(row.id);
-        const target=pos==='right'?document.querySelector('.right-faucets'):pos==='left'?document.querySelector('.left-faucets'):original;
-        if(target)target.appendChild(row);
-      }
-    });
-    vipEmpty.hidden=vipIds.size>0;
-    vipBody.closest('table').style.display=vipIds.size>0?'':'none';
-    if(typeof window.sortTableByPrice==='function')window.sortTableByPrice(true);
-    if(typeof window.refreshBestFaucet==='function')window.refreshBestFaucet();
-  };
+  function playPremiumSound() {
+    if (localStorage.getItem('premiumAlertSoundEnabled') === 'false') return;
+    const audio = new Audio('./notification.mp3');
+    audio.preload = 'auto';
+    audio.play().catch(error => console.warn('[Premium] Звук не воспроизведён:', error));
+  }
 
-  function checkAlerts(){
-    if(!audioUnlocked||!statusDataLoaded)return;
-    const rows=Array.from(document.querySelectorAll('tr[id^="faucet"]'));
-    rows.forEach(row=>{
-      const ready=isReady(row);
-      if(!ready){
-        if(premiumAlerted.delete(row.id))saveAlertSet('premiumAlertedFaucets',premiumAlerted);
-        if(vipAlerted.delete(row.id))saveAlertSet('vipAlertedFaucets',vipAlerted);
+  let audioUnlocked = false;
+  function activateAudio() {
+    audioUnlocked = true;
+  }
+  document.addEventListener('pointerdown', activateAudio, { once: true });
+  document.addEventListener('keydown', activateAudio, { once: true });
+
+  function checkPremiumAlerts() {
+    if (!audioUnlocked) return;
+
+    document.querySelectorAll('tr[id^="faucet"]').forEach(row => {
+      if (!isReady(row)) {
+        if (premiumAlerted.delete(row.id)) saveAlertSet();
         return;
       }
-      if(valueRub(row)>=premiumLimit()&&!premiumAlerted.has(row.id)){
-        premiumAlerted.add(row.id);saveAlertSet('premiumAlertedFaucets',premiumAlerted);
+
+      if (valueRub(row) >= premiumLimit() && !premiumAlerted.has(row.id)) {
+        premiumAlerted.add(row.id);
+        saveAlertSet();
         playPremiumSound();
-        console.log('[Premium] Новая доступная награда:',faucetName(row));
-      }
-      if(vipIds.has(row.id)&&valueRub(row)>=vipLimit()&&!vipAlerted.has(row.id)){
-        vipAlerted.add(row.id);saveAlertSet('vipAlertedFaucets',vipAlerted);
-        playVipSound();
-        console.log('[VIP] Новая доступная награда:',faucetName(row));
+        console.log('[Premium] Новая доступная награда:', faucetName(row));
       }
     });
   }
-  renderVipThreshold();updateLabels();
-  vipEmpty.hidden=true;vipBody.closest('table').style.display='none';
-  setInterval(checkAlerts,3000);
+
+  setInterval(checkPremiumAlerts, 3000);
 })();
 </script>
 
