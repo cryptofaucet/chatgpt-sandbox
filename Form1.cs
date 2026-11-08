@@ -80,6 +80,7 @@ public partial class Form1 : Form
     private Button feesButton = null!;
     private Button swapButton = null!;
     private Button withdrawButton = null!;
+    private Button cacheButton = null!;
 
     private readonly ContextMenuStrip languageMenu = new();
     private string currentLanguage = "en";
@@ -513,7 +514,7 @@ public partial class Form1 : Form
         {
             Dock = DockStyle.Fill,
             ColumnCount = 1,
-            RowCount = 3,
+            RowCount = 4,
             Margin = new Padding(0, 5, 0, 3),
             Padding = Padding.Empty,
             BackColor = sidebar.BackColor
@@ -522,21 +523,24 @@ public partial class Form1 : Form
         navigation.ColumnStyles.Add(
             new ColumnStyle(SizeType.Percent, 100));
 
-        for (int i = 0; i < 3; i++)
+        for (int i = 0; i < 4; i++)
         {
             navigation.RowStyles.Add(
-                new RowStyle(SizeType.Percent, 33.333f));
+                new RowStyle(SizeType.Percent, 25));
         }
 
         feesButton = MakeButton("Limits");
         swapButton = MakeButton("Currency Exchange");
         withdrawButton = MakeButton("Withdraw Funds");
+        cacheButton = MakeButton("Clear Cache");
+        cacheButton.BackColor = Color.FromArgb(55, 75, 98);
 
         foreach (var button in new[]
         {
             feesButton,
             swapButton,
-            withdrawButton
+            withdrawButton,
+            cacheButton
         })
         {
             button.Font = new Font("Segoe UI", 8);
@@ -554,9 +558,13 @@ public partial class Form1 : Form
             _ = OpenTabAsync(
                 new Uri("https://faucetpay.io/wallet?action=withdraw"));
 
+        cacheButton.Click += async (_, _) =>
+            await ClearCacheAsync();
+
         navigation.Controls.Add(feesButton, 0, 0);
         navigation.Controls.Add(swapButton, 0, 1);
         navigation.Controls.Add(withdrawButton, 0, 2);
+        navigation.Controls.Add(cacheButton, 0, 3);
 
         sideLayout.Controls.Add(navigation, 0, 1);
 
@@ -1515,6 +1523,7 @@ public partial class Form1 : Form
         feesButton.Text = ru ? "Лимиты" : "Limits";
         swapButton.Text = ru ? "Обмен валюты" : "Currency Exchange";
         withdrawButton.Text = ru ? "Вывод средств" : "Withdraw Funds";
+        cacheButton.Text = ru ? "Очистить кэш" : "Clear Cache";
 
         monitorTitle.Text = ru
             ? "МОНИТОР ВЫПЛАТ"
@@ -1582,6 +1591,96 @@ public partial class Form1 : Form
             Padding = new Padding(2),
             UseVisualStyleBackColor = false
         };
+    }
+
+    // =========================================================
+    // WEBVIEW2 CACHE
+    // =========================================================
+
+    private async Task ClearCacheAsync()
+    {
+        bool ru = currentLanguage == "ru";
+
+        var answer = MessageBox.Show(
+            ru
+                ? "Очистить только временный кэш сайтов?\n\n" +
+                  "Логины, пароли, cookies, сессии и настройки сайтов останутся."
+                : "Clear only temporary website cache?\n\n" +
+                  "Logins, passwords, cookies, sessions and website settings will be kept.",
+            ru ? "Очистка кэша" : "Clear Cache",
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Question);
+
+        if (answer != DialogResult.Yes)
+            return;
+
+        cacheButton.Enabled = false;
+        cacheButton.Text = ru ? "Очистка..." : "Clearing...";
+
+        try
+        {
+            var profiles = new HashSet<CoreWebView2Profile>();
+
+            void AddProfile(WebView2? web)
+            {
+                try
+                {
+                    if (web != null &&
+                        !web.IsDisposed &&
+                        web.CoreWebView2 != null)
+                    {
+                        profiles.Add(web.CoreWebView2.Profile);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine("Get WebView2 profile error: " + ex.Message);
+                }
+            }
+
+            foreach (var web in browsers.Values)
+                AddProfile(web);
+
+            AddProfile(faucetPayBrowser);
+            AddProfile(balanceBrowser);
+
+            if (profiles.Count == 0)
+                throw new InvalidOperationException(
+                    ru
+                        ? "Браузерный профиль ещё не запущен."
+                        : "The browser profile is not initialized yet.");
+
+            foreach (var profile in profiles)
+            {
+                await profile.ClearBrowsingDataAsync(
+                    CoreWebView2BrowsingDataKinds.DiskCache);
+            }
+
+            MessageBox.Show(
+                ru
+                    ? "Кэш сайтов успешно очищен.\n\n" +
+                      "Данные входа и настройки сайтов сохранены."
+                    : "Website cache cleared successfully.\n\n" +
+                      "Login data and website settings were preserved.",
+                ru ? "Готово" : "Done",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(
+                (ru
+                    ? "Не удалось очистить кэш:\n\n"
+                    : "Could not clear cache:\n\n") + ex.Message,
+                ru ? "Ошибка" : "Error",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
+        }
+        finally
+        {
+            cacheButton.Enabled = true;
+            ApplyLanguage();
+        }
     }
 
     // =========================================================
