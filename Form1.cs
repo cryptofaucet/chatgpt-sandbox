@@ -974,8 +974,16 @@ public partial class Form1 : Form
                 return;
             }
 
-            bool hasNewPremiumFaucet = currentMarkers.Any(
-                marker => !knownPremiumMarkers.Contains(marker));
+            bool hasNewPremiumFaucet = false;
+
+            foreach (string marker in currentMarkers)
+            {
+                if (!knownPremiumMarkers.Contains(marker))
+                {
+                    hasNewPremiumFaucet = true;
+                    break;
+                }
+            }
 
             knownPremiumMarkers.Clear();
 
