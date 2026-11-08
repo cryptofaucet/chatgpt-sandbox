@@ -1780,7 +1780,13 @@ public partial class Form1 : Form
 
             bool sourceIsBtcFaucet = btcFaucetBrowsers.Contains(web);
 
-            if (sourceIsBtcFaucet || IsBtcFaucetUri(uri))
+            if (sourceIsBtcFaucet)
+            {
+                await OpenBtcFaucetPopupAsync(e);
+                return;
+            }
+
+            if (IsBtcFaucetUri(uri))
             {
                 await OpenBtcFaucetTabAsync(uri);
                 return;
@@ -1914,6 +1920,89 @@ public partial class Form1 : Form
         catch (Exception ex)
         {
             Debug.WriteLine("Restore BTC faucet email error: " + ex.Message);
+        }
+    }
+
+    private async Task OpenBtcFaucetPopupAsync(
+        CoreWebView2NewWindowRequestedEventArgs e)
+    {
+        // Сохраняем нативную семантику window.open(), как в Chrome:
+        // popup получает собственный WebView2, общий профиль и связь opener.
+        var deferral = e.GetDeferral();
+
+        try
+        {
+            var newTab = new TabPage("Loading...");
+            var newBrowser = new WebView2
+            {
+                Dock = DockStyle.Fill
+            };
+
+            newTab.Controls.Add(newBrowser);
+            tabs.TabPages.Add(newTab);
+            browsers[newTab] = newBrowser;
+            btcFaucetBrowsers.Add(newBrowser);
+            tabs.SelectedTab = newTab;
+
+            var environment = await EnsureBtcFaucetEnvironmentAsync();
+            await newBrowser.EnsureCoreWebView2Async(environment);
+
+            ConfigureBrowser(newBrowser, allowThirdTab: true);
+
+            newBrowser.CoreWebView2.WebMessageReceived += (_, message) =>
+            {
+                try
+                {
+                    string email = message.TryGetWebMessageAsString();
+                    if (email.Length > 320)
+                        return;
+
+                    btcFaucetEmail = email;
+                    string emailPath = GetBtcFaucetEmailPath();
+                    Directory.CreateDirectory(Path.GetDirectoryName(emailPath)!);
+                    File.WriteAllText(emailPath, email, Encoding.UTF8);
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine("Save BTC faucet email error: " + ex.Message);
+                }
+            };
+
+            newBrowser.CoreWebView2.NavigationCompleted += async (_, navigation) =>
+            {
+                if (navigation.IsSuccess)
+                    await RestoreAndWatchBtcFaucetEmailAsync(newBrowser);
+            };
+
+            newBrowser.CoreWebView2.DocumentTitleChanged += (_, _) =>
+            {
+                if (newBrowser.IsDisposed || newBrowser.CoreWebView2 == null)
+                    return;
+
+                var title = newBrowser.CoreWebView2.DocumentTitle;
+                if (!string.IsNullOrWhiteSpace(title))
+                {
+                    newTab.Text = title.Length > 22
+                        ? title[..22] + "…"
+                        : title;
+                }
+            };
+
+            // Важно: не вызываем Navigate(e.Uri).
+            // WebView2 сам выполняет исходный window.open в назначенном окне.
+            e.NewWindow = newBrowser.CoreWebView2;
+            e.Handled = true;
+        }
+        catch (Exception ex)
+        {
+            e.Handled = true;
+            MessageBox.Show(
+                "Не удалось открыть всплывающую страницу BTC Faucet:\n" + ex.Message,
+                "CryptoFaucet Hub");
+        }
+        finally
+        {
+            deferral.Complete();
         }
     }
 
