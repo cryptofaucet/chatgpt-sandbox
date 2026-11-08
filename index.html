@@ -4338,9 +4338,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const rub=vipLimit(),usd=localStorage.getItem('siteCurrency')==='USD',rate=Number(localStorage.getItem('usdToRub'))||0;
     let value=rub,digits=2;
     if(usd){
-      symbol.textContent='
-</html>
-;digits=6;
+      symbol.textContent='$';digits=6;
       if(rate<=0){whole.value='0';fraction.value='';fraction.placeholder=isEnglish()?'Rate...':'Курс...';whole.disabled=true;fraction.disabled=true;return;}
       value=rub/rate;
     }else{symbol.textContent='₽';fraction.placeholder='';}
