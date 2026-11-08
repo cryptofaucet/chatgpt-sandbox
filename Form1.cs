@@ -1945,8 +1945,7 @@ public partial class Form1 : Form
 
             if (newVisit)
             {
-                await newBrowser.CoreWebView2.Profile.ClearBrowsingDataAsync(
-                    CoreWebView2BrowsingDataKinds.All);
+                await newBrowser.CoreWebView2.Profile.ClearBrowsingDataAsync();
             }
 
             ConfigureBrowser(newBrowser, allowThirdTab: true);
