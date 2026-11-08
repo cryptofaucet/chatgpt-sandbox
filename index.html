@@ -2877,11 +2877,14 @@ window.calculateLiveRow = function(trId, cryptoValue) {
                 const cellB = rowB.querySelector('.timer-cell');
                 const isLimitA = rowA.classList.contains('out-of-limit');
                 const isLimitB = rowB.classList.contains('out-of-limit');
-                const isReadyA = cellA && cellA.classList.contains('ready') && !isLimitA;
-                const isReadyB = cellB && cellB.classList.contains('ready') && !isLimitB;
+                const isGlobalOffA = !!window.isFaucetGloballyDisabled?.(rowA);
+                const isGlobalOffB = !!window.isFaucetGloballyDisabled?.(rowB);
+                const isReadyA = cellA && cellA.classList.contains('ready') && !isLimitA && !isGlobalOffA;
+                const isReadyB = cellB && cellB.classList.contains('ready') && !isLimitB && !isGlobalOffB;
 
-                let statusA = isReadyA ? 2 : (isLimitA ? 0 : 1);
-                let statusB = isReadyB ? 2 : (isLimitB ? 0 : 1);
+                // Сначала готовые, затем таймеры; локально/глобально отключённые — внизу.
+                let statusA = isReadyA ? 2 : ((isLimitA || isGlobalOffA) ? 0 : 1);
+                let statusB = isReadyB ? 2 : ((isLimitB || isGlobalOffB) ? 0 : 1);
 
                 if (statusA !== statusB) return statusB - statusA; 
                 return (parseFloat(rowB.getAttribute('data-rub-value')) || 0) - (parseFloat(rowA.getAttribute('data-rub-value')) || 0);
@@ -3418,7 +3421,7 @@ if (window.isLocalModeEnabled?.() &&
         const originalButton = bestRow.querySelector('.faucet-link');
 
         if (originalButton) {
-            const currentBestMarker = `${faucetName}_${highestPrice.toFixed(4)}`;
+            const currentBestMarker = `${bestRow.id}_${highestPrice.toFixed(8)}`;
             
            if (topBox.getAttribute('data-current-best') === currentBestMarker) {
     const heading = topBox.querySelector('span');
@@ -3527,6 +3530,7 @@ setInterval(findAndDisplayBestFaucet, 20000);
     let disabledFaucets = new Set();
     let globalSettings = {};
     let statusLoaded = false;
+    window.globalStatusDataLoaded = false;
 
     // Сохраняем исходные значения HTML до запуска остальных скриптов.
     const defaultSettings = new Map();
@@ -3861,6 +3865,7 @@ window.updatePublicFaucetStats = updatePublicFaucetStats;
                     : {};
 
             statusLoaded = true;
+            window.globalStatusDataLoaded = true;
             
             if (typeof window.updateVipFaucetsFromStatus === 'function') {
                 window.updateVipFaucetsFromStatus(data);
@@ -4313,37 +4318,63 @@ document.addEventListener('DOMContentLoaded', function () {
   function premiumLimit(){const n=Number(localStorage.getItem('premiumAlertLimitRUB'));return Number.isFinite(n)&&n>=0?n:0.10;}
   function vipLimit(){const n=Number(localStorage.getItem('vipAlertLimitRUB'));return Number.isFinite(n)&&n>=0?n:0.10;}
 
-  function playPremiumSound(){
-    if(localStorage.getItem('premiumAlertSoundEnabled')==='false')return;
-    const audio=new Audio('./notification.mp3');
-    audio.preload='auto';
-    audio.play().catch(error=>console.warn('[Premium] Звук не воспроизведён:',error));
-  }
   let audioContext=null;
-  function unlockVipAudio(){
-    const C=window.AudioContext||window.webkitAudioContext;if(!C)return;
-    if(!audioContext)audioContext=new C();
-    if(audioContext.state==='suspended')audioContext.resume().catch(()=>{});
-  }
   let audioUnlocked=false;
-  function activateAudio(){audioUnlocked=true;unlockVipAudio();}
+
+  function getAudioContext(){
+    const AudioContextClass=window.AudioContext||window.webkitAudioContext;
+    if(!AudioContextClass)return null;
+    if(!audioContext)audioContext=new AudioContextClass();
+    return audioContext;
+  }
+
+  function unlockAudio(){
+    const context=getAudioContext();
+    if(context&&context.state==='suspended')context.resume().catch(()=>{});
+  }
+
+  function activateAudio(){
+    audioUnlocked=true;
+    unlockAudio();
+  }
+
   document.addEventListener('pointerdown',activateAudio,{once:true});
   document.addEventListener('keydown',activateAudio,{once:true});
+
+  function playToneSequence(frequencies,step=0.13){
+    try{
+      const context=getAudioContext();
+      if(!context)return;
+      if(context.state==='suspended')context.resume().catch(()=>{});
+      const now=context.currentTime;
+      frequencies.forEach((hz,i)=>{
+        const oscillator=context.createOscillator();
+        const gain=context.createGain();
+        const start=now+i*step;
+        oscillator.type='sine';
+        oscillator.frequency.value=hz;
+        gain.gain.setValueAtTime(0.0001,start);
+        gain.gain.exponentialRampToValueAtTime(0.12,start+0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001,start+0.20);
+        oscillator.connect(gain);
+        gain.connect(context.destination);
+        oscillator.start(start);
+        oscillator.stop(start+0.21);
+      });
+    }catch(error){
+      console.warn('[Alert] Звук не воспроизведён:',error);
+    }
+  }
+
+  // Звук генерируется WebAudio: никаких MP3/WAV-запросов к GitHub Pages.
+  function playPremiumSound(){
+    if(localStorage.getItem('premiumAlertSoundEnabled')==='false')return;
+    playToneSequence([660,880,1175],0.12);
+  }
+
   function playVipSound(){
     if(localStorage.getItem('vipAlertSoundEnabled')==='false')return;
-    try{
-      unlockVipAudio();if(!audioContext)return;
-      const now=audioContext.currentTime;
-      [880,1175,1568].forEach((hz,i)=>{
-        const osc=audioContext.createOscillator(),gain=audioContext.createGain();
-        osc.type='sine';osc.frequency.value=hz;
-        gain.gain.setValueAtTime(0.0001,now+i*0.13);
-        gain.gain.exponentialRampToValueAtTime(0.12,now+i*0.13+0.02);
-        gain.gain.exponentialRampToValueAtTime(0.0001,now+i*0.13+0.18);
-        osc.connect(gain);gain.connect(audioContext.destination);
-        osc.start(now+i*0.13);osc.stop(now+i*0.13+0.2);
-      });
-    }catch(error){console.warn('[VIP] Звук не воспроизведён:',error);}
+    playToneSequence([880,1175,1568],0.13);
   }
 
   function renderVipThreshold(){
@@ -4402,6 +4433,7 @@ document.addEventListener('DOMContentLoaded', function () {
     Object.keys(settings).forEach(id=>{if(settings[id]&&settings[id].vip===true)next.add('faucet'+String(id).replace(/^faucet/i,''));});
     vipIds=next;
     statusDataLoaded=true;
+    window.vipStatusDataLoaded=true;
     document.querySelectorAll('tr[id^="faucet"]').forEach(row=>{
       if(vipIds.has(row.id)){if(row.parentElement!==vipBody)vipBody.appendChild(row);}
       else if(row.parentElement===vipBody){
