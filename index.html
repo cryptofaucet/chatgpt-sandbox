@@ -4272,6 +4272,7 @@ document.addEventListener('DOMContentLoaded', function () {
   const originalParents=new Map();
   document.querySelectorAll('tr[id^="faucet"]').forEach(row=>{if(row.parentElement)originalParents.set(row.id,row.parentElement);});
   let vipIds=new Set();
+  let statusDataLoaded=false;
   function loadAlertSet(key){
     try{return new Set(JSON.parse(localStorage.getItem(key)||'[]'));}
     catch(_){return new Set();}
@@ -4386,6 +4387,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const next=new Set();
     Object.keys(settings).forEach(id=>{if(settings[id]&&settings[id].vip===true)next.add('faucet'+String(id).replace(/^faucet/i,''));});
     vipIds=next;
+    statusDataLoaded=true;
     document.querySelectorAll('tr[id^="faucet"]').forEach(row=>{
       if(vipIds.has(row.id)){if(row.parentElement!==vipBody)vipBody.appendChild(row);}
       else if(row.parentElement===vipBody){
@@ -4401,7 +4403,7 @@ document.addEventListener('DOMContentLoaded', function () {
   };
 
   function checkAlerts(){
-    if(!audioUnlocked)return;
+    if(!audioUnlocked||!statusDataLoaded)return;
     const rows=Array.from(document.querySelectorAll('tr[id^="faucet"]'));
     rows.forEach(row=>{
       const ready=isReady(row);
