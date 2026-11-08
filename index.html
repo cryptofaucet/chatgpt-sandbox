@@ -4467,8 +4467,7 @@ document.addEventListener('DOMContentLoaded', function () {
   }
   renderVipThreshold();updateLabels();
   vipEmpty.hidden=true;vipBody.closest('table').style.display='none';
-  // Оповещения запускает только Windows-приложение через встроенный WAV.
-  // В обычной браузерной версии проверка и звуковые сигналы отключены.
+  setInterval(checkAlerts,3000);
 })();
 </script>
 
