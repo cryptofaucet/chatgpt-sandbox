@@ -1764,8 +1764,27 @@ public partial class Form1 : Form
         // SoundPlayer выплат и Premium Alert работает независимо.
         web.CoreWebView2.IsMuted = !soundEnabled;
 
+        if (btcFaucetBrowsers.Contains(web))
+        {
+            web.CoreWebView2.NavigationStarting += (_, e) =>
+                LogBtcFaucetDebug("NAV START | " + web.Source + " | " + e.Uri);
+
+            web.CoreWebView2.NavigationCompleted += (_, e) =>
+                LogBtcFaucetDebug(
+                    "NAV END | " + web.Source +
+                    " | success=" + e.IsSuccess +
+                    " | status=" + e.WebErrorStatus);
+        }
+
         web.CoreWebView2.NewWindowRequested += async (_, e) =>
         {
+            if (btcFaucetBrowsers.Contains(web))
+            {
+                LogBtcFaucetDebug(
+                    "POPUP REQUEST | source=" + web.Source +
+                    " | target=" + e.Uri);
+            }
+
             e.Handled = true;
 
             if (!Uri.TryCreate(
@@ -1923,11 +1942,36 @@ public partial class Form1 : Form
         }
     }
 
+    private static void LogBtcFaucetDebug(string message)
+    {
+        try
+        {
+            string directory = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "CryptoFaucetHub");
+
+            Directory.CreateDirectory(directory);
+
+            string path = Path.Combine(directory, "btc-step2-debug.txt");
+
+            File.AppendAllText(
+                path,
+                DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") +
+                " | " + message + Environment.NewLine,
+                Encoding.UTF8);
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine("BTC debug log error: " + ex.Message);
+        }
+    }
+
     private async Task OpenBtcFaucetPopupAsync(
         CoreWebView2NewWindowRequestedEventArgs e)
     {
-        // Сохраняем нативную семантику window.open(), как в Chrome:
-        // popup получает собственный WebView2, общий профиль и связь opener.
+        // Открываем отдельную вкладку через штатный NewWindowRequested:
+        // профиль BTC общий, а rel="noopener" на стороне сайта остаётся без изменений.
+        LogBtcFaucetDebug("POPUP CREATE | target=" + e.Uri);
         var deferral = e.GetDeferral();
 
         try
@@ -1988,10 +2032,11 @@ public partial class Form1 : Form
                 }
             };
 
-            // Важно: не вызываем Navigate(e.Uri).
-            // WebView2 сам выполняет исходный window.open в назначенном окне.
+            // Не вызываем Navigate(e.Uri): исходный window.open
+            // должен быть обработан самим WebView2.
             e.NewWindow = newBrowser.CoreWebView2;
             e.Handled = true;
+            LogBtcFaucetDebug("POPUP ASSIGNED | target=" + e.Uri);
         }
         catch (Exception ex)
         {
