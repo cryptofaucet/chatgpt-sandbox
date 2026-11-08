@@ -65,7 +65,7 @@ public partial class Form1 : Form
 
     private bool premiumAlertInitialized;
     private bool premiumCheckInProgress;
-    private string lastPremiumMarker = "";
+    private readonly HashSet<string> knownPremiumMarkers = new(StringComparer.Ordinal);
 
     private Label balanceLabel = null!;
     private Label balanceTitle = null!;
@@ -250,7 +250,7 @@ public partial class Form1 : Form
                         return;
 
                     premiumAlertInitialized = false;
-                    lastPremiumMarker = "";
+                    knownPremiumMarkers.Clear();
 
                     premiumAlertTimer.Start();
                 };
@@ -887,22 +887,50 @@ public partial class Form1 : Form
 
         try
         {
+            // Читаем те же готовые краны и RUB-порог, которые использует
+            // новый index.html. Старый data-current-best больше не нужен.
             const string script = """
             (() => {
-                const box = document.querySelector('#smart-premium-box');
+                const threshold = Number(
+                    localStorage.getItem('premiumAlertLimitRUB')
+                );
 
-                if (!box) {
-                    return JSON.stringify({
-                        marker: '',
-                        threshold: 0
-                    });
-                }
+                const limit = Number.isFinite(threshold) && threshold >= 0
+                    ? threshold
+                    : 0.10;
+
+                const rows = Array.from(
+                    document.querySelectorAll('tr[id^="faucet"]')
+                ).filter(row => {
+                    const cell = row.querySelector('.timer-cell');
+
+                    if (!cell || !cell.classList.contains('ready'))
+                        return false;
+
+                    if (window.isFaucetGloballyDisabled &&
+                        window.isFaucetGloballyDisabled(row))
+                        return false;
+
+                    if (window.isLocalModeEnabled &&
+                        window.isLocalModeEnabled() &&
+                        row.classList.contains('out-of-limit'))
+                        return false;
+
+                    const reward = Number.parseFloat(
+                        row.getAttribute('data-rub-value')
+                    ) || 0;
+
+                    return reward >= limit;
+                }).map(row => ({
+                    id: row.id,
+                    reward: Number.parseFloat(
+                        row.getAttribute('data-rub-value')
+                    ) || 0
+                }));
 
                 return JSON.stringify({
-                    marker: box.getAttribute('data-current-best') || '',
-                    threshold: Number(
-                        localStorage.getItem('premiumAlertLimitRUB')
-                    ) || 0
+                    threshold: limit,
+                    rows: rows
                 });
             })();
             """;
@@ -915,55 +943,53 @@ public partial class Form1 : Form
 
             using var doc = JsonDocument.Parse(json);
 
-            string marker =
-                doc.RootElement.GetProperty("marker").GetString() ?? "";
+            var currentMarkers = new HashSet<string>(StringComparer.Ordinal);
 
-            double threshold =
-                doc.RootElement.GetProperty("threshold").GetDouble();
-
-            if (string.IsNullOrWhiteSpace(marker))
+            foreach (var row in doc.RootElement.GetProperty("rows").EnumerateArray())
             {
-                lastPremiumMarker = "";
-                premiumAlertInitialized = true;
-                return;
+                string id = row.GetProperty("id").GetString() ?? "";
+                double reward = row.GetProperty("reward").GetDouble();
+
+                if (string.IsNullOrWhiteSpace(id))
+                    continue;
+
+                string marker = id + "_" +
+                    reward.ToString(
+                        "0.########",
+                        System.Globalization.CultureInfo.InvariantCulture);
+
+                currentMarkers.Add(marker);
             }
 
+            // Первый опрос после загрузки только запоминает текущее состояние,
+            // чтобы не выдавать ложные уведомления за уже готовые краны.
             if (!premiumAlertInitialized)
             {
-                lastPremiumMarker = marker;
+                knownPremiumMarkers.Clear();
+
+                foreach (string marker in currentMarkers)
+                    knownPremiumMarkers.Add(marker);
+
                 premiumAlertInitialized = true;
                 return;
             }
 
-            if (marker == lastPremiumMarker)
+            bool hasNewPremiumFaucet = currentMarkers.Any(
+                marker => !knownPremiumMarkers.Contains(marker));
+
+            knownPremiumMarkers.Clear();
+
+            foreach (string marker in currentMarkers)
+                knownPremiumMarkers.Add(marker);
+
+            if (!hasNewPremiumFaucet)
                 return;
 
-            lastPremiumMarker = marker;
+            if (premiumAlertSoundEnabled)
+                _ = PlayPremiumAlertSoundAsync();
 
-            int separator = marker.LastIndexOf('_');
-
-            if (separator < 0)
-                return;
-
-            string rewardText = marker[(separator + 1)..];
-
-            if (!double.TryParse(
-                    rewardText,
-                    System.Globalization.NumberStyles.Any,
-                    System.Globalization.CultureInfo.InvariantCulture,
-                    out double reward))
-            {
-                return;
-            }
-
-            if (reward >= threshold)
-            {
-                if (premiumAlertSoundEnabled)
-                    _ = PlayPremiumAlertSoundAsync();
-
-                if (restoreOnPremiumAlert)
-                    RestoreFromTray();
-            }
+            if (restoreOnPremiumAlert)
+                RestoreFromTray();
         }
         catch (Exception ex)
         {
