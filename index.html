@@ -4444,23 +4444,43 @@ document.addEventListener('DOMContentLoaded', function () {
   };
 
   function checkAlerts(){
-    if(!audioUnlocked||!statusDataLoaded)return;
+    if(!statusDataLoaded)return;
     const rows=Array.from(document.querySelectorAll('tr[id^="faucet"]'));
     rows.forEach(row=>{
       const ready=isReady(row);
-      if(!ready){
+      const reward=valueRub(row);
+      const premiumQualifies=ready&&reward>premiumLimit();
+      const vipQualifies=ready&&vipIds.has(row.id)&&reward>vipLimit();
+
+      // Выход из соответствующего бокса сбрасывает отметку.
+      // При следующем попадании этот же кран снова вызовет оповещение.
+      if(!premiumQualifies){
         if(premiumAlerted.delete(row.id))saveAlertSet('premiumAlertedFaucets',premiumAlerted);
-        if(vipAlerted.delete(row.id))saveAlertSet('vipAlertedFaucets',vipAlerted);
-        return;
-      }
-      if(valueRub(row)>=premiumLimit()&&!premiumAlerted.has(row.id)){
+      }else if(!premiumAlerted.has(row.id)){
         premiumAlerted.add(row.id);saveAlertSet('premiumAlertedFaucets',premiumAlerted);
-        playPremiumSound();
+        if(isWindowsApp&&window.chrome&&window.chrome.webview){
+          window.chrome.webview.postMessage({
+            type:'faucetBoxAlert',box:'premium',faucetId:row.id,
+            faucetName:faucetName(row),rewardRub:reward
+          });
+        }else{
+          playPremiumSound();
+        }
         console.log('[Premium] Новая доступная награда:',faucetName(row));
       }
-      if(vipIds.has(row.id)&&valueRub(row)>=vipLimit()&&!vipAlerted.has(row.id)){
+
+      if(!vipQualifies){
+        if(vipAlerted.delete(row.id))saveAlertSet('vipAlertedFaucets',vipAlerted);
+      }else if(!vipAlerted.has(row.id)){
         vipAlerted.add(row.id);saveAlertSet('vipAlertedFaucets',vipAlerted);
-        playVipSound();
+        if(isWindowsApp&&window.chrome&&window.chrome.webview){
+          window.chrome.webview.postMessage({
+            type:'faucetBoxAlert',box:'vip',faucetId:row.id,
+            faucetName:faucetName(row),rewardRub:reward
+          });
+        }else{
+          playVipSound();
+        }
         console.log('[VIP] Новая доступная награда:',faucetName(row));
       }
     });
