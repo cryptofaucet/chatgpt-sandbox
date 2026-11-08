@@ -244,13 +244,25 @@ public partial class Form1 : Form
 
                 var mainBrowser = browser;
 
-                mainBrowser.CoreWebView2.NavigationCompleted += (_, e) =>
+                mainBrowser.CoreWebView2.NavigationCompleted += async (_, e) =>
                 {
                     if (!e.IsSuccess)
                         return;
 
                     premiumAlertInitialized = false;
                     knownPremiumMarkers.Clear();
+
+                    try
+                    {
+                        // В приложении звук Premium Alert воспроизводит сама программа.
+                        // Отключаем дублирующий HTML-звук нового index.html.
+                        await mainBrowser.CoreWebView2.ExecuteScriptAsync(
+                            "localStorage.setItem('premiumAlertSoundEnabled', 'false');");
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine("Disable webpage Premium sound error: " + ex.Message);
+                    }
 
                     premiumAlertTimer.Start();
                 };
@@ -930,6 +942,7 @@ public partial class Form1 : Form
 
                 return JSON.stringify({
                     threshold: limit,
+                    soundEnabled: document.querySelector('#premium-sound-toggle')?.checked !== false,
                     rows: rows
                 });
             })();
@@ -993,7 +1006,11 @@ public partial class Form1 : Form
             if (!hasNewPremiumFaucet)
                 return;
 
-            if (premiumAlertSoundEnabled)
+            bool pageSoundEnabled =
+                doc.RootElement.TryGetProperty("soundEnabled", out var soundElement) &&
+                soundElement.ValueKind == JsonValueKind.True;
+
+            if (premiumAlertSoundEnabled && pageSoundEnabled)
                 _ = PlayPremiumAlertSoundAsync();
 
             if (restoreOnPremiumAlert)
