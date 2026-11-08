@@ -942,7 +942,6 @@ public partial class Form1 : Form
 
                 return JSON.stringify({
                     threshold: limit,
-                    soundEnabled: document.querySelector('#premium-sound-toggle')?.checked !== false,
                     rows: rows
                 });
             })();
@@ -1013,11 +1012,9 @@ public partial class Form1 : Form
             if (!hasNewPremiumFaucet)
                 return;
 
-            bool pageSoundEnabled =
-                doc.RootElement.TryGetProperty("soundEnabled", out var soundElement) &&
-                soundElement.ValueKind == JsonValueKind.True;
-
-            if (premiumAlertSoundEnabled && pageSoundEnabled)
+            // Звук Premium Alert управляется настройкой приложения в трее.
+            // Web-галочка отключена выше намеренно, чтобы не было двойного звука.
+            if (premiumAlertSoundEnabled)
                 _ = PlayPremiumAlertSoundAsync();
 
             if (restoreOnPremiumAlert)
@@ -1474,21 +1471,38 @@ public partial class Form1 : Form
         {
             premiumSoundPlayer?.Stop();
             premiumSoundPlayer?.Dispose();
+            premiumSoundPlayer = null;
             premiumSoundStream?.Dispose();
+            premiumSoundStream = null;
 
             premiumSoundStream = typeof(Form1).Assembly
                 .GetManifestResourceStream("CryptoFaucetApp.notification.wav");
 
-            if (premiumSoundStream == null)
-                return Task.CompletedTask;
-
-            premiumSoundPlayer = new SoundPlayer(premiumSoundStream);
-            premiumSoundPlayer.Load();
-            premiumSoundPlayer.Play();
+            if (premiumSoundStream != null)
+            {
+                premiumSoundPlayer = new SoundPlayer(premiumSoundStream);
+                premiumSoundPlayer.Load();
+                premiumSoundPlayer.Play();
+            }
+            else
+            {
+                // Не оставляем уведомление полностью без звука,
+                // если WAV не включён в сборку приложения.
+                SystemSounds.Exclamation.Play();
+                Debug.WriteLine("Premium Alert WAV resource not found; system sound used.");
+            }
         }
         catch (Exception ex)
         {
             Debug.WriteLine("Premium Alert sound error: " + ex.Message);
+            try
+            {
+                SystemSounds.Exclamation.Play();
+            }
+            catch (Exception fallbackEx)
+            {
+                Debug.WriteLine("Premium Alert fallback sound error: " + fallbackEx.Message);
+            }
         }
 
         return Task.CompletedTask;
@@ -1906,39 +1920,86 @@ public partial class Form1 : Form
 
         string script = """
             (() => {
-                const field = document.querySelector('input[name="sydxaCLSFGe"]');
-                if (!field || !window.chrome || !window.chrome.webview) return "no-email-field";
-
+                const selector = 'input[name="sydxaCLSFGe"]';
                 const savedEmail = EMAIL_PLACEHOLDER;
-                if (savedEmail) {
-                    field.value = savedEmail;
-                    field.dispatchEvent(new Event("input", { bubbles: true }));
-                    field.dispatchEvent(new Event("change", { bubbles: true }));
-                }
 
-                const saveEmail = () => {
-                    try { window.chrome.webview.postMessage(field.value); } catch (_) {}
+                const sendEmail = value => {
+                    try {
+                        if (window.chrome && window.chrome.webview)
+                            window.chrome.webview.postMessage(String(value || ""));
+                    } catch (_) {}
                 };
 
-                if (!field.dataset.btcEmailWatcher) {
-                    field.dataset.btcEmailWatcher = "1";
-                    field.addEventListener("input", saveEmail);
-                    field.addEventListener("change", saveEmail);
-                    field.addEventListener("blur", saveEmail);
+                const attachEmailField = () => {
+                    const field = document.querySelector(selector);
+                    if (!field) return false;
+
+                    if (!field.dataset.btcEmailWatcher) {
+                        field.dataset.btcEmailWatcher = "1";
+
+                        if (savedEmail && !field.value) {
+                            field.value = savedEmail;
+                            field.dispatchEvent(new Event("input", { bubbles: true }));
+                            field.dispatchEvent(new Event("change", { bubbles: true }));
+                        }
+
+                        const save = () => sendEmail(field.value);
+                        field.addEventListener("input", save);
+                        field.addEventListener("change", save);
+                        field.addEventListener("blur", save);
+                    }
+
+                    sendEmail(field.value);
+                    return true;
+                };
+
+                if (!document.documentElement.dataset.btcEmailDelegated) {
+                    document.documentElement.dataset.btcEmailDelegated = "1";
+
+                    const saveFromEvent = event => {
+                        const target = event.target;
+                        if (target && target.matches && target.matches(selector))
+                            sendEmail(target.value);
+                    };
+
+                    document.addEventListener("input", saveFromEvent, true);
+                    document.addEventListener("change", saveFromEvent, true);
+                    document.addEventListener("blur", saveFromEvent, true);
+                    document.addEventListener("submit", () => {
+                        const field = document.querySelector(selector);
+                        if (field) sendEmail(field.value);
+                    }, true);
+                    window.addEventListener("pagehide", () => {
+                        const field = document.querySelector(selector);
+                        if (field) sendEmail(field.value);
+                    });
                 }
 
-                saveEmail();
-                return "email-ready";
+                attachEmailField();
+
+                if (!window.__btcEmailObserver && document.documentElement) {
+                    window.__btcEmailObserver = new MutationObserver(() => {
+                        attachEmailField();
+                    });
+                    window.__btcEmailObserver.observe(document.documentElement, {
+                        childList: true,
+                        subtree: true
+                    });
+                }
+
+                return "email-watcher-installed";
             })();
             """.Replace("EMAIL_PLACEHOLDER", emailJson);
 
         try
         {
-            await web.CoreWebView2.ExecuteScriptAsync(script);
+            string result = await web.CoreWebView2.ExecuteScriptAsync(script);
+            LogBtcFaucetDebug("EMAIL WATCHER | " + web.Source + " | " + result);
         }
         catch (Exception ex)
         {
             Debug.WriteLine("Restore BTC faucet email error: " + ex.Message);
+            LogBtcFaucetDebug("EMAIL WATCHER ERROR | " + ex.Message);
         }
     }
 
@@ -2005,10 +2066,12 @@ public partial class Form1 : Form
                     string emailPath = GetBtcFaucetEmailPath();
                     Directory.CreateDirectory(Path.GetDirectoryName(emailPath)!);
                     File.WriteAllText(emailPath, email, Encoding.UTF8);
+                    LogBtcFaucetDebug("EMAIL SAVED | chars=" + email.Length);
                 }
                 catch (Exception ex)
                 {
                     Debug.WriteLine("Save BTC faucet email error: " + ex.Message);
+                    LogBtcFaucetDebug("EMAIL SAVE ERROR | " + ex.Message);
                 }
             };
 
