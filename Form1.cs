@@ -22,6 +22,9 @@ public partial class Form1 : Form
     private readonly Dictionary<TabPage, WebView2> browsers = new();
     private readonly HashSet<string> knownPayoutIds = new(StringComparer.Ordinal);
     private readonly HashSet<WebView2> thirdTabAllowedBrowsers = new();
+    private readonly HashSet<WebView2> btcFaucetBrowsers = new();
+    private CoreWebView2Environment? btcFaucetEnvironment;
+    private string btcFaucetEmail = "";
     private static readonly HttpClient httpClient = new();
 
     private WebView2 browser = new();
@@ -84,6 +87,8 @@ public partial class Form1 : Form
 
     private readonly ContextMenuStrip languageMenu = new();
     private string currentLanguage = "en";
+
+    private const string BtcFaucetHost = "btcfaucet.in";
 
     private const string AllowedOrigin =
         "https://cryptofaucet.github.io";
@@ -1715,17 +1720,15 @@ public partial class Form1 : Form
                 return;
             }
 
-            bool isFaucet144 =
-                uri.Host.Equals(
-                    "btcfaucet.in",
-                    StringComparison.OrdinalIgnoreCase) ||
-                uri.Host.EndsWith(
-                    ".btcfaucet.in",
-                    StringComparison.OrdinalIgnoreCase);
+            bool sourceIsBtcFaucet = btcFaucetBrowsers.Contains(web);
 
-            bool allowThirdTab =
-                isFaucet144 ||
-                thirdTabAllowedBrowsers.Contains(web);
+            if (sourceIsBtcFaucet || IsBtcFaucetUri(uri))
+            {
+                await OpenBtcFaucetTabAsync(uri);
+                return;
+            }
+
+            bool allowThirdTab = thirdTabAllowedBrowsers.Contains(web);
 
             await OpenTabAsync(uri, allowThirdTab);
         };
@@ -1758,10 +1761,202 @@ public partial class Form1 : Form
         }
     }
 
+    private static bool IsBtcFaucetUri(Uri uri)
+    {
+        return uri.Host.Equals(
+                   BtcFaucetHost,
+                   StringComparison.OrdinalIgnoreCase) ||
+               uri.Host.EndsWith(
+                   "." + BtcFaucetHost,
+                   StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string GetBtcFaucetEmailPath()
+    {
+        return Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "CryptoFaucetHub",
+            "btcfaucet-email.txt");
+    }
+
+    private async Task<CoreWebView2Environment> EnsureBtcFaucetEnvironmentAsync()
+    {
+        if (btcFaucetEnvironment != null)
+            return btcFaucetEnvironment;
+
+        string root = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "CryptoFaucetHub",
+            "BtcFaucet");
+
+        Directory.CreateDirectory(root);
+
+        string emailPath = GetBtcFaucetEmailPath();
+
+        try
+        {
+            if (File.Exists(emailPath))
+                btcFaucetEmail = File.ReadAllText(emailPath, Encoding.UTF8).Trim();
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine("Read BTC faucet email error: " + ex.Message);
+        }
+
+        string profilePath = Path.Combine(root, "WebView2Profile");
+        Directory.CreateDirectory(profilePath);
+
+        btcFaucetEnvironment = await CoreWebView2Environment.CreateAsync(
+            null,
+            profilePath,
+            null);
+
+        return btcFaucetEnvironment;
+    }
+
+    private async Task RestoreAndWatchBtcFaucetEmailAsync(WebView2 web)
+    {
+        if (web.IsDisposed || web.CoreWebView2 == null)
+            return;
+
+        string emailJson = JsonSerializer.Serialize(btcFaucetEmail);
+
+        string script = """
+            (() => {
+                const field = document.querySelector('input[name="sydxaCLSFGe"]');
+                if (!field || !window.chrome || !window.chrome.webview) return "no-email-field";
+
+                const savedEmail = EMAIL_PLACEHOLDER;
+                if (savedEmail) {
+                    field.value = savedEmail;
+                    field.dispatchEvent(new Event("input", { bubbles: true }));
+                    field.dispatchEvent(new Event("change", { bubbles: true }));
+                }
+
+                const saveEmail = () => {
+                    try { window.chrome.webview.postMessage(field.value); } catch (_) {}
+                };
+
+                if (!field.dataset.btcEmailWatcher) {
+                    field.dataset.btcEmailWatcher = "1";
+                    field.addEventListener("input", saveEmail);
+                    field.addEventListener("change", saveEmail);
+                    field.addEventListener("blur", saveEmail);
+                }
+
+                saveEmail();
+                return "email-ready";
+            })();
+            """.Replace("EMAIL_PLACEHOLDER", emailJson);
+
+        try
+        {
+            await web.CoreWebView2.ExecuteScriptAsync(script);
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine("Restore BTC faucet email error: " + ex.Message);
+        }
+    }
+
+    private async Task OpenBtcFaucetTabAsync(Uri uri)
+    {
+        const int maximumTabs = 3;
+
+        if (tabs.TabPages.Count >= maximumTabs)
+            return;
+
+        bool newVisit = btcFaucetBrowsers.Count == 0;
+
+        var newTab = new TabPage("Loading...");
+        var newBrowser = new WebView2
+        {
+            Dock = DockStyle.Fill
+        };
+
+        newTab.Controls.Add(newBrowser);
+        tabs.TabPages.Add(newTab);
+        browsers[newTab] = newBrowser;
+        btcFaucetBrowsers.Add(newBrowser);
+        tabs.SelectedTab = newTab;
+
+        try
+        {
+            var environment = await EnsureBtcFaucetEnvironmentAsync();
+            await newBrowser.EnsureCoreWebView2Async(environment);
+
+            if (newVisit)
+            {
+                await newBrowser.CoreWebView2.Profile.ClearBrowsingDataAsync(
+                    CoreWebView2BrowsingDataKinds.All);
+            }
+
+            ConfigureBrowser(newBrowser, allowThirdTab: true);
+
+            newBrowser.CoreWebView2.WebMessageReceived += (_, e) =>
+            {
+                try
+                {
+                    string email = e.TryGetWebMessageAsString();
+                    if (email.Length > 320)
+                        return;
+
+                    btcFaucetEmail = email;
+                    string emailPath = GetBtcFaucetEmailPath();
+                    Directory.CreateDirectory(Path.GetDirectoryName(emailPath)!);
+                    File.WriteAllText(emailPath, email, Encoding.UTF8);
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine("Save BTC faucet email error: " + ex.Message);
+                }
+            };
+
+            newBrowser.CoreWebView2.NavigationCompleted += async (_, e) =>
+            {
+                if (e.IsSuccess)
+                    await RestoreAndWatchBtcFaucetEmailAsync(newBrowser);
+            };
+
+            newBrowser.CoreWebView2.DocumentTitleChanged += (_, _) =>
+            {
+                if (newBrowser.IsDisposed || newBrowser.CoreWebView2 == null)
+                    return;
+
+                var title = newBrowser.CoreWebView2.DocumentTitle;
+                if (!string.IsNullOrWhiteSpace(title))
+                {
+                    newTab.Text = title.Length > 22
+                        ? title[..22] + "…"
+                        : title;
+                }
+            };
+
+            newBrowser.CoreWebView2.Navigate(uri.ToString());
+        }
+        catch (Exception ex)
+        {
+            btcFaucetBrowsers.Remove(newBrowser);
+            newTab.Text = currentLanguage == "ru" ? "Ошибка" : "Error";
+
+            MessageBox.Show(
+                (currentLanguage == "ru"
+                    ? "Не удалось открыть BTC Faucet:\n"
+                    : "Could not open BTC Faucet:\n") + ex.Message,
+                "CryptoFaucet Hub");
+        }
+    }
+
     private async Task OpenTabAsync(
         Uri uri,
         bool allowThirdTab = false)
     {
+        if (IsBtcFaucetUri(uri))
+        {
+            await OpenBtcFaucetTabAsync(uri);
+            return;
+        }
+
         int maximumTabs = allowThirdTab ? 3 : 2;
 
         if (tabs.TabPages.Count >= maximumTabs)
@@ -2176,6 +2371,7 @@ public partial class Form1 : Form
         {
             browsers.Remove(tab);
             thirdTabAllowedBrowsers.Remove(web);
+            btcFaucetBrowsers.Remove(web);
             tabs.TabPages.Remove(tab);
             web.Dispose();
             tab.Dispose();
