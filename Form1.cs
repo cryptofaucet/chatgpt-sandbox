@@ -21,6 +21,7 @@ public partial class Form1 : Form
     private readonly TabControl tabs = new();
     private readonly Dictionary<TabPage, WebView2> browsers = new();
     private readonly HashSet<string> knownPayoutIds = new(StringComparer.Ordinal);
+    private readonly HashSet<WebView2> thirdTabAllowedBrowsers = new();
     private static readonly HttpClient httpClient = new();
 
     private WebView2 browser = new();
@@ -1587,8 +1588,13 @@ public partial class Form1 : Form
     // WEBVIEW2 CONFIGURATION AND TABS
     // =========================================================
 
-    private void ConfigureBrowser(WebView2 web)
+    private void ConfigureBrowser(
+        WebView2 web,
+        bool allowThirdTab = false)
     {
+        if (allowThirdTab)
+            thirdTabAllowedBrowsers.Add(web);
+
         web.CoreWebView2.Settings.AreDevToolsEnabled = false;
         web.CoreWebView2.Settings.AreDefaultContextMenusEnabled = true;
 
@@ -1610,7 +1616,19 @@ public partial class Form1 : Form
                 return;
             }
 
-            await OpenTabAsync(uri);
+            bool isFaucet144 =
+                uri.Host.Equals(
+                    "btcfaucet.in",
+                    StringComparison.OrdinalIgnoreCase) ||
+                uri.Host.EndsWith(
+                    ".btcfaucet.in",
+                    StringComparison.OrdinalIgnoreCase);
+
+            bool allowThirdTab =
+                isFaucet144 ||
+                thirdTabAllowedBrowsers.Contains(web);
+
+            await OpenTabAsync(uri, allowThirdTab);
         };
     }
 
@@ -1641,9 +1659,13 @@ public partial class Form1 : Form
         }
     }
 
-    private async Task OpenTabAsync(Uri uri)
+    private async Task OpenTabAsync(
+        Uri uri,
+        bool allowThirdTab = false)
     {
-        if (tabs.TabPages.Count >= 2)
+        int maximumTabs = allowThirdTab ? 3 : 2;
+
+        if (tabs.TabPages.Count >= maximumTabs)
             return;
 
         var newTab = new TabPage("Loading...");
@@ -1664,7 +1686,7 @@ public partial class Form1 : Form
         {
             await newBrowser.EnsureCoreWebView2Async();
 
-            ConfigureBrowser(newBrowser);
+            ConfigureBrowser(newBrowser, allowThirdTab);
 
             newBrowser.CoreWebView2.DocumentTitleChanged += (_, _) =>
             {
@@ -2054,6 +2076,7 @@ public partial class Form1 : Form
         if (browsers.TryGetValue(tab, out var web))
         {
             browsers.Remove(tab);
+            thirdTabAllowedBrowsers.Remove(web);
             tabs.TabPages.Remove(tab);
             web.Dispose();
             tab.Dispose();
