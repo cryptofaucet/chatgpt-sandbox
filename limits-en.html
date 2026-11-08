@@ -1,0 +1,383 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FaucetPay Limits and Fees — CryptoFaucet Hub</title>
+
+<style>
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: 20px;
+  background: #101522;
+  color: #e8edf7;
+  font-family: Arial, sans-serif;
+}
+
+.container { max-width: 1200px; margin: auto; }
+h1 { font-size: 26px; }
+
+.info {
+  color: #aab6cc;
+  margin: 12px 0;
+}
+
+button {
+  padding: 10px 16px;
+  border: 0;
+  border-radius: 8px;
+  background: #3678f5;
+  color: white;
+  cursor: pointer;
+}
+
+button:disabled { opacity: 0.6; cursor: wait; }
+
+.status {
+  margin: 14px 0;
+  color: #aab6cc;
+  overflow-wrap: anywhere;
+}
+
+.table-wrap {
+  overflow-x: auto;
+  border: 1px solid #303b50;
+  border-radius: 10px;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 800px;
+  background: #171f30;
+}
+
+th, td {
+  padding: 12px 10px;
+  border-bottom: 1px solid #303b50;
+  text-align: left;
+  white-space: nowrap;
+}
+
+th {
+  background: #222e43;
+  color: #9fc1ff;
+}
+
+/* Priority withdrawal — red columns */
+th.priority-head {
+  background: #8b303b;
+  color: #ffffff;
+}
+
+td.priority-cell {
+  background: #ffe4e6;
+  color: #7f1d1d;
+  border-bottom-color: #f3b9bf;
+}
+
+/* Normal withdrawal — green columns */
+th.normal-head {
+  background: #27613e;
+  color: #ffffff;
+}
+
+td.normal-cell {
+  background: #dcfce7;
+  color: #166534;
+  border-bottom-color: #b4e6c2;
+}
+
+tr:last-child td { border-bottom: 0; }
+
+.num { font-family: Consolas, monospace; }
+.coin-name { font-weight: bold; }
+.ticker { color: #9fc1ff; font-weight: bold; }
+
+/* Dollar values are black on both colored backgrounds */
+.usd-value {
+  display: block;
+  margin-top: 4px;
+  color: #111827;
+  font-family: Arial, sans-serif;
+  font-size: 11px;
+  font-weight: bold;
+  line-height: 1.3;
+}
+
+@media (max-width: 600px) {
+  body { padding: 12px; }
+  h1 { font-size: 22px; }
+  th, td { padding: 10px 8px; }
+  .usd-value { font-size: 10px; }
+}
+</style>
+</head>
+
+<body>
+<div class="container">
+  <h1>FaucetPay Limits and Fees</h1>
+
+  <p class="info">
+    Data from the public FaucetPay page.
+    USD values are approximate.
+    Red indicates priority withdrawal; green indicates normal withdrawal.
+  </p>
+
+  <button id="refreshBtn" type="button">Refresh Data</button>
+  <div class="status" id="status">Loading data...</div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Coin</th>
+          <th>Ticker</th>
+          <th>Network</th>
+          <th class="priority-head">Priority Fee</th>
+          <th class="priority-head">Priority Min. Withdrawal</th>
+          <th class="normal-head">Normal Fee</th>
+          <th class="normal-head">Normal Min. Withdrawal</th>
+        </tr>
+      </thead>
+      <tbody id="feesBody">
+        <tr><td colspan="7">Waiting for data...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+const FEES_URL = 'https://proxy.cors.dev/https://faucetpay.io/fees';
+
+const statusEl = document.getElementById('status');
+const bodyEl = document.getElementById('feesBody');
+const refreshBtn = document.getElementById('refreshBtn');
+
+function cleanText(value) {
+  return (value || '').replace(/\s+/g, ' ').trim();
+}
+
+// Use the exchange rates saved by index.html.
+function getCryptoRatesUSD() {
+  try {
+    return JSON.parse(localStorage.getItem('cryptoRatesUSD') || '{}');
+  } catch (error) {
+    console.warn('Could not read saved exchange rates:', error);
+    return {};
+  }
+}
+
+function formatUSD(amount, ticker, rates) {
+  const rate = Number(rates[ticker]);
+
+  if (
+    !Number.isFinite(amount) ||
+    !Number.isFinite(rate) ||
+    amount < 0 ||
+    rate <= 0
+  ) {
+    return '—';
+  }
+
+  const value = amount * rate;
+  if (!Number.isFinite(value)) return '—';
+
+  let decimals = 2;
+
+  if (value > 0 && value < 0.01) decimals = 6;
+  if (value > 0 && value < 0.000001) decimals = 10;
+
+  return '$' + value.toLocaleString('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: decimals
+  });
+}
+
+// Recalculate dollar values using the saved exchange rates.
+function refreshUsdValues() {
+  const rates = getCryptoRatesUSD();
+
+  bodyEl.querySelectorAll('tr[data-ticker]').forEach(row => {
+    const ticker = row.dataset.ticker;
+    const cells = row.querySelectorAll('td');
+
+    [3, 4, 5, 6].forEach(index => {
+      const cell = cells[index];
+      if (!cell) return;
+
+      const usdEl = cell.querySelector('.usd-value');
+      if (!usdEl) return;
+
+      const amount = Number(cell.dataset.amount);
+      usdEl.textContent = formatUSD(amount, ticker, rates);
+    });
+  });
+
+  const rows = [...bodyEl.querySelectorAll('tr[data-ticker]')];
+  const tickersWithRates = new Set(
+    Object.keys(rates).filter(ticker => Number(rates[ticker]) > 0)
+  );
+
+  const available = new Set(
+    rows
+      .map(row => row.dataset.ticker)
+      .filter(ticker => tickersWithRates.has(ticker))
+  ).size;
+
+  // Do not overwrite the status while loading or after an error.
+  if (rows.length && !refreshBtn.disabled) {
+    statusEl.textContent =
+      'Coins loaded: ' + rows.length +
+      '. Rates available for: ' + available + '.';
+  }
+}
+
+async function loadFees() {
+  refreshBtn.disabled = true;
+  statusEl.textContent = 'Fetching data from FaucetPay...';
+
+  try {
+    const response = await fetch(FEES_URL, { cache: 'no-store' });
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+
+    const html = await response.text();
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const rows = [...doc.querySelectorAll('table tbody tr')];
+
+    if (!rows.length) {
+      throw new Error('Fee table not found');
+    }
+
+    const data = rows.map(row => {
+      const cells = [...row.querySelectorAll('th, td')]
+        .map(cell => cleanText(cell.innerText || cell.textContent));
+
+      if (cells.length < 6) return null;
+
+      const coinCell = row.querySelector('td');
+      const img = coinCell?.querySelector('img[alt]');
+      const coinInfo = img?.nextElementSibling;
+      const infoDivs = coinInfo?.children;
+
+      const name = cleanText(infoDivs?.[0]?.textContent);
+      const ticker = cleanText(img?.alt).toUpperCase();
+
+      const parsedName = name || cells[0];
+      const parsedTicker = ticker || '';
+
+      return {
+        name: parsedName,
+        ticker: parsedTicker,
+        network: cells[1],
+        normalFee: cells[2],
+        normalMin: cells[3],
+        priorityFee: cells[4],
+        priorityMin: cells[5]
+      };
+    }).filter(Boolean);
+
+    if (!data.length) {
+      throw new Error('Could not read table rows');
+    }
+
+    const fragment = document.createDocumentFragment();
+    const rates = getCryptoRatesUSD();
+
+    data.forEach(item => {
+      const tr = document.createElement('tr');
+      tr.dataset.ticker = item.ticker;
+
+      // Column order:
+      // 1 Coin, 2 Ticker, 3 Network,
+      // 4 Priority Fee, 5 Priority Minimum,
+      // 6 Normal Fee, 7 Normal Minimum.
+      const values = [
+        item.name,
+        item.ticker,
+        item.network,
+        item.priorityFee,
+        item.priorityMin,
+        item.normalFee,
+        item.normalMin
+      ];
+
+      values.forEach((value, index) => {
+        const td = document.createElement('td');
+        td.textContent = value;
+
+        if (index === 0) td.className = 'coin-name';
+        if (index === 1) td.className = 'ticker';
+
+        if (index === 3 || index === 4) {
+          td.classList.add('priority-cell');
+        }
+
+        if (index === 5 || index === 6) {
+          td.classList.add('normal-cell');
+        }
+
+        if (index >= 3) {
+          td.classList.add('num');
+
+          const amount = Number(
+            String(value).replace(/,/g, '').trim()
+          );
+
+          td.dataset.amount = Number.isFinite(amount)
+            ? String(amount)
+            : 'NaN';
+
+          const usd = document.createElement('span');
+          usd.className = 'usd-value';
+          usd.textContent = formatUSD(amount, item.ticker, rates);
+          td.appendChild(usd);
+        }
+
+        tr.appendChild(td);
+      });
+
+      fragment.appendChild(tr);
+    });
+
+    bodyEl.replaceChildren(fragment);
+
+    const available = new Set(
+      data
+        .map(item => item.ticker)
+        .filter(ticker => Number(rates[ticker]) > 0)
+    ).size;
+
+    statusEl.textContent =
+      'Coins loaded: ' + data.length +
+      '. Rates available for: ' + available +
+      '. Updated: ' + new Date().toLocaleString('en-GB');
+
+  } catch (error) {
+    console.error('FaucetPay loading error:', error);
+    statusEl.textContent =
+      'Loading error: ' + error.message +
+      '. Click "Refresh Data" and try again.';
+  } finally {
+    refreshBtn.disabled = false;
+  }
+}
+
+refreshBtn.addEventListener('click', loadFees);
+
+window.addEventListener('storage', event => {
+  if (event.key === 'cryptoRatesUSD') {
+    refreshUsdValues();
+  }
+});
+
+// Check for new rates that index.html may have saved.
+setInterval(refreshUsdValues, 5000);
+
+loadFees();
+</script>
+</body>
+</html>
