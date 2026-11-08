@@ -5,15 +5,7 @@
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
 	
     <title>CryptoFaucet Hub — Лучшие Краны FaucetPay</title>
-    <script>
-        if (new URLSearchParams(window.location.search).has('apprefresh')) {
-            document.documentElement.classList.add('windows-app');
-        }
-    </script>
     <style>
-    html:not(.windows-app) #premium-alert-settings,
-    html:not(.windows-app) #vip-alert-settings { display: none !important; }
-
     body { font-family: 'Segoe UI', sans-serif; background-color: #0b0e14; color: #f0f4f8; padding: 5px 10px; display: flex; flex-direction: column; align-items: center; margin: 0; }
         h1 { color: #00ffcc; text-shadow: 0 0 10px rgba(0, 255, 204, 0.4); margin: 5px 0 2px 0; font-size: 1.5rem; text-align: center; }
         p.subtitle { color: #8a99ad; margin: 0 0 12px 0; font-size: 0.9rem; text-align: center; }
@@ -1229,7 +1221,7 @@ tr.globally-disabled .btn-limit {
      style="margin: 0; flex: 1; min-width: 360px; height: auto; min-height: 90px; padding: 10px; display: flex; flex-direction: column; justify-content: center; align-items: center; overflow: hidden; position: relative;">
 
       <!-- НАСТРОЙКА ОПОВЕЩЕНИЯ -->
-<div id="premium-alert-settings" style="width: 100%; max-width: 468px; display: flex;
+<div style="width: 100%; max-width: 468px; display: flex;
 align-items: center; justify-content: flex-start;
 gap: 8px; padding-left: 8px; margin-bottom: 8px;
 box-sizing: border-box;">
@@ -1270,9 +1262,6 @@ box-sizing: border-box;">
     >
 
     <span id="premium-alert-currency">₽</span>
-    <label class="premium-alert-settings" style="display:flex;align-items:center;gap:4px;margin:0 0 0 8px;white-space:nowrap;">
-      <input type="checkbox" id="premium-sound-toggle" checked><span id="premium-sound-label">Звук</span>
-    </label>
 </div>
 
     <!-- ПРЕМИУМ-БОКС -->
@@ -1287,14 +1276,13 @@ box-sizing: border-box;">
 <!-- VIP BOX: сюда перемещаются настоящие строки VIP-кранов -->
 <section id="vip-box" class="vip-box">
   <div class="vip-box-title">💎 VIP BOX</div>
-  <div id="vip-alert-settings" class="vip-alert-settings">
+  <div class="vip-alert-settings">
     <label for="vip-alert-whole" id="vip-alert-caption" style="white-space:nowrap;">🔔 VIP: оповещать от:</label>
     <input type="text" id="vip-alert-whole" class="vip-alert-part" inputmode="numeric" maxlength="2" autocomplete="off" value="0" aria-label="VIP целая часть">
     <span style="font-weight:bold">.</span>
     <input type="text" id="vip-alert-fraction" class="vip-alert-part" inputmode="numeric" maxlength="2" autocomplete="off" value="10" aria-label="VIP дробная часть">
     <input type="hidden" id="vip-alert-limit" value="0.10">
     <span id="vip-alert-currency">₽</span>
-    <label style="display:flex;align-items:center;gap:4px;white-space:nowrap"><input type="checkbox" id="vip-sound-toggle" checked><span id="vip-sound-label">Звук</span></label>
   </div>
   <table>
     <thead><tr><th></th><th>Кран</th><th>Награда</th><th>Монета</th><th>RUB / USD</th><th>Кулдаун / Статус</th></tr></thead>
@@ -4425,9 +4413,6 @@ document.addEventListener('DOMContentLoaded', function () {
     if(empty)empty.textContent=en?'No VIP faucets assigned yet.':'VIP-краны пока не назначены.';
   }
 
-  const premiumToggle=document.getElementById('premium-sound-toggle'),vipToggle=document.getElementById('vip-sound-toggle');
-  if(premiumToggle){premiumToggle.checked=localStorage.getItem('premiumAlertSoundEnabled')!=='false';premiumToggle.addEventListener('change',()=>localStorage.setItem('premiumAlertSoundEnabled',String(premiumToggle.checked)));}
-  if(vipToggle){vipToggle.checked=localStorage.getItem('vipAlertSoundEnabled')!=='false';vipToggle.addEventListener('change',()=>localStorage.setItem('vipAlertSoundEnabled',String(vipToggle.checked)));}
   [document.getElementById('vip-alert-whole'),document.getElementById('vip-alert-fraction')].forEach(input=>{
     if(!input)return;input.addEventListener('input',saveVipThreshold);input.addEventListener('change',renderVipThreshold);input.addEventListener('blur',renderVipThreshold);
   });
