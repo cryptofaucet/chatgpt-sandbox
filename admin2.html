@@ -861,8 +861,10 @@ async function updateFaucetInHtmlFile(path, oldId, newId, name, url, reward, coi
     const match = source.match(rowPattern);
     if (!match) throw new Error("Строка " + oldKey + " не найдена в " + path + ".");
     const rowHTML = match[0].split(oldKey).join(newKey);
-    const doc = new DOMParser().parseFromString(rowHTML, "text/html");
-    const row = doc.querySelector("tr");
+    // Отдельный <tr> нельзя разбирать как самостоятельный HTML-документ:
+    // браузер может выбросить его из DOM. Оборачиваем строку в table/tbody.
+    const doc = new DOMParser().parseFromString("<table><tbody>" + rowHTML + "</tbody></table>", "text/html");
+    const row = doc.querySelector("table > tbody > tr");
     const link = row?.querySelector("a.faucet-link");
     const rewardInput = row?.querySelector("input.crypto-input");
     const badge = row?.querySelector(".crypto-badge");
