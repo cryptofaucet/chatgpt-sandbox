@@ -914,7 +914,7 @@ async function saveEditedFaucet(event) {
     const reward = document.getElementById("editFaucetReward").value.trim();
     const coin = document.getElementById("editFaucetCoin").value.trim().toUpperCase();
     const minutes = Number(document.getElementById("editFaucetTime").value);
-    if (!/^\\d+$/.test(newId) || !Number.isSafeInteger(Number(newId)) || Number(newId) < 1) { showEditMessage("ID должен быть целым положительным числом.", true); return; }
+    if (!/^\d+$/.test(newId) || !Number.isSafeInteger(Number(newId)) || Number(newId) < 1) { showEditMessage("ID должен быть целым положительным числом.", true); return; }
     if (!name || !urlText || !reward || !coin || !Number.isFinite(minutes) || minutes < 0) { showEditMessage("Заполни все поля корректно. Таймер должен быть неотрицательным.", true); return; }
     if (!/^[A-Z0-9._-]+$/.test(coin)) { showEditMessage("Неверный формат валюты.", true); return; }
     let parsedURL;
@@ -1187,8 +1187,8 @@ function renderFound() {
 
 function normHost(value) {
     let v = String(value || "").trim().toLowerCase(); if (!v) return "";
-    try { v = new URL(v.includes("://") ? v : "https://" + v).hostname; } catch (_) { v = v.replace(/^https?:\\/\\//,"").split("/")[0].replace(/:\\d+$/,""); }
-    return v.replace(/^www\\./,"");
+    try { v = new URL(v.includes("://") ? v : "https://" + v).hostname; } catch (_) { v = v.replace(/^https?:\/\//,"").split("/")[0].replace(/:\\d+$/,""); }
+    return v.replace(/^www\./,"");
 }
 function foundUrl(f) {
     const raw = String(f?.url || f?.link || "").trim();
@@ -1207,7 +1207,7 @@ async function nextFreeId() {
     const used = new Set();
     for (const file of files) {
         const doc = new DOMParser().parseFromString(file.content, "text/html");
-        doc.querySelectorAll('tr[id^="faucet"]').forEach(r => { const m=r.id.match(/^faucet(\\d+)$/); if(m) used.add(Number(m[1])); });
+        doc.querySelectorAll('tr[id^="faucet"]').forEach(r => { const m=r.id.match(/^faucet(\d+)$/); if(m) used.add(Number(m[1])); });
     }
     let id=1; while(used.has(id)) id++; return id;
 }
