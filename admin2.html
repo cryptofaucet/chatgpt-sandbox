@@ -855,12 +855,12 @@ async function updateFaucetInHtmlFile(path, oldId, newId, name, url, reward, coi
     const file = await githubGetFile(path);
     let source = file.content;
     const oldKey = "faucet" + oldId, newKey = "faucet" + newId;
-    if (String(oldId) !== String(newId) && new RegExp('\\bid=["\\']' + newKey + '["\\']', "i").test(source))
+    if (String(oldId) !== String(newId) && new RegExp("\\bid=[\"']" + newKey + "[\"']", "i").test(source))
         throw new Error("ID " + newKey + " уже занят в " + path + ".");
-    const rowPattern = new RegExp('<tr\\b(?=[^>]*\\bid=["\\']' + oldKey + '["\\'])[^>]*>[\\s\\S]*?<\\/tr>', "i");
+    const rowPattern = new RegExp("<tr\\b(?=[^>]*\\bid=[\"']" + oldKey + "[\"'])[^>]*>[\\s\\S]*?<\\/tr>", "i");
     const match = source.match(rowPattern);
     if (!match) throw new Error("Строка " + oldKey + " не найдена в " + path + ".");
-    let rowHTML = match[0].split(oldKey).join(newKey);
+    const rowHTML = match[0].split(oldKey).join(newKey);
     const doc = new DOMParser().parseFromString(rowHTML, "text/html");
     const row = doc.querySelector("tr");
     const link = row?.querySelector("a.faucet-link");
@@ -875,12 +875,11 @@ async function updateFaucetInHtmlFile(path, oldId, newId, name, url, reward, coi
     badge.className = "badge " + coin.toLowerCase() + " crypto-badge";
     row.setAttribute("data-crypto", coin);
     source = source.replace(rowPattern, row.outerHTML);
-    const commentPattern = new RegExp('<!--\\s*Faucet\\s+' + oldId + '\\s*:[\\s\\S]*?-->\\s*(?=<tr\\b(?=[^>]*\\bid=["\\']' + newKey + '["\\']))', "i");
+    const commentPattern = new RegExp("<!--\\s*Faucet\\s+" + oldId + "\\s*:[\\s\\S]*?-->\\s*(?=<tr\\b(?=[^>]*\\bid=[\"']" + newKey + "[\"']))", "i");
     const safeName = name.replace(/--/g, "—").replace(/[<>]/g, "");
     source = source.replace(commentPattern, "<!-- Faucet " + newId + ": " + safeName + " -->\n");
     await githubPutFile(path, source, file.sha, "Edit faucet " + oldId + " -> " + newId + ": " + name);
 }
-
 async function updateFaucetSettingsJson(path, oldId, newId, oldName, name, url, reward, coin, minutes, timestamp) {
     return updateJsonFile(path, content => {
         content.disabled_faucets = Array.isArray(content.disabled_faucets) ? content.disabled_faucets : [];
