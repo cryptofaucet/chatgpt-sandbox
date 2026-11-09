@@ -937,6 +937,8 @@ async function saveEditedFaucet(event) {
         await updateFaucetSettingsJson(FILE_PATH, oldId, newId, oldName, name, parsedURL.href, reward, coin, minutes, stamp);
         await updateFaucetSettingsJson(DRIPS_FILE_PATH, oldId, newId, oldName, name, parsedURL.href, reward, coin, minutes, stamp);
         if (oldFaucet) Object.assign(oldFaucet, { id:String(newId), name, url:parsedURL.href, reward, coin, minutes });
+        dripsDisabledFaucets = dripsDisabledFaucets.map(value => String(value) === String(oldId) ? String(newId) : String(value));
+        if (vipFaucets.has(String(oldId))) { vipFaucets.delete(String(oldId)); vipFaucets.add(String(newId)); }
         const status = JSON.parse((await githubGetFile(FILE_PATH)).content);
         globalDisabledFaucets = Array.isArray(status.disabled_faucets) ? status.disabled_faucets.map(String) : [];
         const settings = status.faucet_settings || {};
